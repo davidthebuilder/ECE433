@@ -9,7 +9,7 @@
 #define bitcheck(word, idx)  ((word>>idx) &   1   ) //Checks the bit number <idx> -- 0 means clear; !0 means set.
 #define RED 0 // RED is used for setting the pins of LED funtion
 #define BLUE 1 //BLUE is used for setting the pin of LED function
-#define GREEN 2 //GREEN is used for setting the pin of the LED funciton.
+#define GREEN 2 //GREEN is used for setting the pin of the LED funciton
 
 
 void setClks();
