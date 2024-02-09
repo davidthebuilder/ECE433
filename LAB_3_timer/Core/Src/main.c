@@ -13,6 +13,7 @@
 ///////////////////////////////////////////////////////////////////////////////////
 #include "stm32l552xx.h"
 #include <stdio.h>
+//#include "cortex_m33.h"
 
 // Some helper macros
 #define bitset(word,   idx)  ((word) |=  (1<<(idx))) //Sets the bit number <idx> -- All other bits are not affected.
@@ -57,9 +58,11 @@ int main(void) {
     // Use debug mode
 
    // TEST CASE 1:
+
+
    while(1){
        RLEDtoggle();
-       delay_ms(1000);
+       delay_ms(100000);
    }
 
 
@@ -112,7 +115,14 @@ void delay_ms(uint32_t val){
     // Now the counter is counting down once it reaches 0, a flag in the control register
     // will be set -- use that flag.
 
+	SysTick->CTRL = 0b101;
 
+	for (uint32_t i=0; i<=val; i++){
+		SysTick->VAL =0;
+		SysTick->LOAD=160000-1;
+//		SysTick->VAL = SysTick->LOAD;
+		SysTick->CTRL |= 0x10;
+	}
 
 }
 
@@ -132,6 +142,9 @@ void delay_us(uint32_t val){
     // 4- Set the counter current value to 0
     // 5- Enable the timer
     // 6- Stall the CPU until the "Update Interrupt Flag" is raised.
+
+
+
 
 
 }
