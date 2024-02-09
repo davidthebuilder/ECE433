@@ -41,7 +41,7 @@ void freq_gen(uint16_t val); // Use Timer 3 and blink Green LED (PC7), 50% Duty 
 void edge_counter();         // Use LPTIM2 routed to PD12
 void pwm(uint32_t val);      // Use Timer 2 routed to PB11 (val should be 0 to 100)
 
-
+uint32_t global_var; //testing var
 
 //////////////////////////////////
 /*         Main Function        */
@@ -59,18 +59,19 @@ int main(void) {
 
    // TEST CASE 1:
 
-
-   while(1){
-       RLEDtoggle();
-       delay_ms(100000);
-   }
+//
+//   while(1){
+//       RLEDtoggle();
+//       delay_ms(1000);
+//   }
 
 
 //    // TEST CASE 2:
-//    while(1){
-//        RLEDtoggle();
-//        delay_us(1000000);
-//    }
+    bitset(RCC ->APB1ENR1,3); // enable TIM4 by Enable APB1 port for peripheral Clock (for this case TIM4)
+    while(1){
+        RLEDtoggle();
+        delay_us(1000000);
+    }
 
 
 //    // TEST CASE 3:
@@ -115,13 +116,12 @@ void delay_ms(uint32_t val){
     // Now the counter is counting down once it reaches 0, a flag in the control register
     // will be set -- use that flag.
 
-	SysTick->CTRL = 0b101;
-
+	SysTick->CTRL = 0b101; // 2nd bit set the clock source 1st bit set the intetrupter of, and the
+	//zero bit enable the system tick
+	SysTick->VAL =0;
 	for (uint32_t i=0; i<=val; i++){
-		SysTick->VAL =0;
-		SysTick->LOAD=160000-1;
-//		SysTick->VAL = SysTick->LOAD;
-		SysTick->CTRL |= 0x10;
+		SysTick->LOAD=16000-1; // Set the Load to reach 15999 cycle
+		while(bitcheck(SysTick->CTRL, 16) == 0); // Stay in the while loop until 1ms per the system tick
 	}
 
 }
@@ -143,8 +143,14 @@ void delay_us(uint32_t val){
     // 5- Enable the timer
     // 6- Stall the CPU until the "Update Interrupt Flag" is raised.
 
+	TIM5->PSC = 160-1;		// Perscaler setting, slow down the clk to 1MHz (The counter clock frequency CK_CNT is equal to fCK_PSC , Refer to 34.4.14
+	TIM5->ARR = val -1 ;	// ARR is the value to be loaded in the actual auto-reload register. Referance 34.4.15
+	TIM5->CNT = 0;			// counter need to be set to 0 to reset the cycle of operation
+//	TIM5->CR1 = 1<<4;		//
+	TIM5->CR1 |= 1;			//
+	while(bitcheck(TIM5->SR, 0)==0){
 
-
+	}
 
 
 }
@@ -162,7 +168,7 @@ void freq_gen(uint16_t val){
     //   |<--  VAL -->|
     //
     // Configure PC7 as output to drive the LED
-    // Steps to setup Timer 8 As A frequency generator:
+    // Steps to setup Timer 3(not timer 8) As A frequency generator:
     //   1- Enable Timer Clock
     //   2- Set prescaler (choose a prescale value that could make your live easier?!) hint:16k
     //   3- Set auto reload register
@@ -258,7 +264,8 @@ GPIOA->MODER |= 1<<18; // setting bit 18
 GPIOA->MODER &= ~(1<<19);
 }
 void RLEDtoggle(){
-GPIOA->ODR ^= 1<<9;
+global_var = GPIOA->ODR ^= 1<<9;
+
 }
 
 void setClks(){
