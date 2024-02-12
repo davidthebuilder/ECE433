@@ -42,6 +42,7 @@ void edge_counter();         // Use LPTIM2 routed to PD12
 void pwm(uint32_t val);      // Use Timer 2 routed to PB11 (val should be 0 to 100)
 
 uint32_t global_var; //testing var
+char  Uart_char;
 
 //////////////////////////////////
 /*         Main Function        */
@@ -66,20 +67,22 @@ int main(void) {
 //   }
 
 
-//    // TEST CASE 2:
-    bitset(RCC ->APB1ENR1,3); // enable TIM4 by Enable APB1 port for peripheral Clock (for this case TIM4)
-    while(1){
-        RLEDtoggle();
-        delay_us(1000000);
-    }
+    // TEST CASE 2:
+//    bitset(RCC ->APB1ENR1,3); // enable TIM5 by Enable APB1 port for peripheral Clock (for this case TIM5)
+//    while(1){
+//        RLEDtoggle();
+//        delay_us(1000000); // There is a 88 cycle off set for every 1 sec
+//    }
 
 
-//    // TEST CASE 3:
-//    freq_gen(5000); // LED is On for 5 second, OFF for 5 second
-
+    // TEST CASE 3:
+//    while(1){
+//    freq_gen(5000); // LED is On for 5 second, OFF for 5 second(NOTE: freq_gen is passing an arg that will be setting the period in msec)
+//
+//    }
 
 //    // TEST CASE 4: (should run in debug mode)
-//    edge_counter();
+    edge_counter();
 
 
 //    // TEST CASE 5:  Using PWM for dimming an LED
@@ -143,15 +146,18 @@ void delay_us(uint32_t val){
     // 5- Enable the timer
     // 6- Stall the CPU until the "Update Interrupt Flag" is raised.
 
-	TIM5->PSC = 160-1;		// Perscaler setting, slow down the clk to 1MHz (The counter clock frequency CK_CNT is equal to fCK_PSC , Refer to 34.4.14
-	TIM5->ARR = val -1 ;	// ARR is the value to be loaded in the actual auto-reload register. Referance 34.4.15
+	TIM5->PSC = 16-1;		// Perscaler setting, slow down the clk to 1MHz (The counter clock frequency CK_CNT is equal to fCK_PSC , Refer to 34.4.14
+	TIM5->ARR = val -1 ;	// ARR is the value to be loaded in the actual auto-reload register. Reference 34.4.15
 	TIM5->CNT = 0;			// counter need to be set to 0 to reset the cycle of operation
-//	TIM5->CR1 = 1<<4;		//
-	TIM5->CR1 |= 1;			//
-	while(bitcheck(TIM5->SR, 0)==0){
-
+	//TIM5->CR1 = 1<<4;		// This is a configuration set up of TIM5 for direction of counting Reference 34.4.1
+	TIM5->CR1 |= 1;			// This just enables the counter Reference 34.4.1
+	while(bitcheck(TIM5->SR, 0)==0){ // This is checking for the state register for any interrupts ref 34.4.5
+								   	 // Bit 0 UIF: Update interrupt flag
+									 // This bit is set by hardware on an update event. It is cleared by software.
+									 //	0: No update occurred
+									 //	1: Update interrupt pending.
 	}
-
+	bitclear(TIM5->SR,0); // This is not the same as SYSTICK in the sense that it will clear the flag because in this case it is interrupt flag
 
 }
 
@@ -170,16 +176,43 @@ void freq_gen(uint16_t val){
     // Configure PC7 as output to drive the LED
     // Steps to setup Timer 3(not timer 8) As A frequency generator:
     //   1- Enable Timer Clock
-    //   2- Set prescaler (choose a prescale value that could make your live easier?!) hint:16k
+    //   2- Set prescaler (choose a prescaler value that could make your live easier?!) hint:16k
     //   3- Set auto reload register
     //   4- Reset the counter current value
     //   5- Enable the timer
-    //   6- The LED will autmatically toggle.
+    //   6- The LED will automatically toggle.
 
-    /* Timer and PC7 Config is here */
+    /* Timer and PC7 Configuration is here */
+// GPIOC port MODER GREEN set to Alternate function mode for the timer
+	bitclear(GPIOC->MODER,14); // These are refer in 11.6
+	bitset(GPIOC->MODER,15);
+
+	bitclear(GPIOC->AFR[0],31); // For alternate function refer to 11.6.13 but excel spreadsheet
+	bitclear(GPIOC->AFR[0],30); // Also AFR is an array type size of 2 for both AFLR and AFHR
+	bitset(GPIOC->AFR[0],29); // Setting pin 7 to Alter function 2
+	bitclear(GPIOC->AFR[0],28);
+
+	// General Purpose out put
+//	bitclear(GPIOC->MODER,15); // These are refer in 11.6
+//	bitset(GPIOC->MODER,14);
+
+    bitset(RCC->APB1ENR1,1);// enable PC7 that is is connected to TIM3_CH2
+	TIM3->PSC = 16000-1;	// Prescaler setting, slow down the clk to 1kHz (The counter clock frequency CK_CNT is equal to fCK_PSC , Refer to 34.4.14
+	TIM3->ARR = val-1 ;	// ARR is to be set to twice the value minus 1 for the frequency. Reference 34.4.15
+	TIM3->CCMR2 = 0x3000;		//0011: Toggle - OC1REF toggles when TIMx_CNT=TIMx_CCMR2 refer to 34.4.8
+	TIM3->CCR2 = val/2;		// CCR2 is capturing/Compare in channel 2 refer 34.4.17
+	TIM3->CCER |=0b100000 ;		// enable ch 2 per 34.4.11
+	TIM3->CNT = 0;			// Counter need to be set to 0 to reset the cycle of operation refer to 34.4.12
+	TIM3->CR1 |= 1;			// This just enables the counter Reference 34.4.1
+	while(bitcheck(TIM3->SR, 0)==0){ // This is checking for the state register for any interrupts ref 34.4.5
+								   	 // Bit 0 UIF: Update interrupt flag
+									 // This bit is set by hardware on an update event. It is cleared by software.
+									 //	0: No update occurred
+									 //	1: Update interrupt pending.
+	}
+	bitclear(TIM3->SR,0); // This is not the same as SYSTICK in the sense that it will clear the flag because in this case it is interrupt flag
 
 }
-
 
 // Use LPTIM2 routed to PD12
 void edge_counter(){
@@ -189,7 +222,7 @@ void edge_counter(){
     // Timer need to count from positive edge to positive edge
     // Use external input Pin RX on the board (LPUART2 RX) as the LPTIM2 clock source.
 
-    // LPUART1 is enabled so that you can can generated input for counters
+    // LPUART1 is enabled so that you can  generated input for counters
     // For example if you send the letter 'U' (ASCII is 0x55=0101_0101) from realterm you
     // will see a waveform like this one:    (5 neg edges, 5 pos edges)
     //  _____   _   _   _   _   ______
@@ -202,11 +235,48 @@ void edge_counter(){
 
     // Configure LPTIM2 to use external input as counter clock source
 
-
+	LPTIM2->CNT =0; // clearing the counter
     while (1){
        // In a debug mode monitor: LPTIM2->CNT while you are sending the letter 'U' from terminal
        // you are going to see 0 before you press, then 5 after the 1st 'U',
        // then 10 and so on.
+
+    	// configure GPIOD to AF
+
+    	// GPIOD port MODER GREEN set to Alternate function mode for the timer
+    		bitclear(GPIOD->MODER,28); // These are refered in 11.6.1
+    		bitset(GPIOD->MODER,29);
+
+    	//enabling GPIOD
+    		bitset(RCC->APB2ENR,3); // Enabling the timer for GPIOD per  9.8.42 map
+
+    		bitset(GPIOD->AFR[1],19); // For alternate function refer to 11.6.13 and excel spreadsheet
+    		bitset(GPIOD->AFR[1],18); // Also AFR is an array type size of 2 for both AFHR ( section 14 [3:0] set to high)
+    		bitset(GPIOD->AFR[1],17);
+    		bitclear(GPIOD->AFR[1],16);
+    	//initialize low power timer two LPTIM2 and configuration
+    	bitset(RCC->APB1ENR2,5); // enable LPTTIM2EN per 9.8.42 table 80
+
+
+
+    	bitset(LPTIM2->CR, 0); // LPTIM is enabled referance to 37.7.5
+
+    	bitset(LPTIM2->CFGR,17); // configure the TRIGEN to rising edges per 37.
+    	bitclear(LPTIM2->CFGR,18);
+
+    	bitset(LPTIM2->CFGR, 0); // refer 37.7.4 for configuration reg for low power timer
+
+    	// Ensure that PD12 has a wire reaching to STLINK-RX (top left of the board has a RX pin in the silkscreen)
+
+    	// READ to the UART Function from the terminal
+    	Uart_char =LPUART1read();
+
+    	 //monitor the count value of the timer 2
+
+
+    	global_var = LPTIM2->CNT; // Using Low power timer 2 to count reg refer 37.7.8
+
+
    }
 }
 
