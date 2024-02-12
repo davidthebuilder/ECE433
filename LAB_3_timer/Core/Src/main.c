@@ -326,7 +326,7 @@ void pwm(uint32_t val){
 	//	The choice between PWM mode 1 and 2 affects the polarity of your PWM signal.
 
 	//Set the match value to val (or something based on val)?
-	TIM4->CCR1 = val//FIX THIS DO i NEED TO SET IT TO CCR2 OR CCR1?
+	TIM4->CCR1 = val;//FIX THIS DO i NEED TO SET IT TO CCR2 OR CCR1?
 
 
 	bitset(TIM4->CCER,4);// Enable compare mode for Channel 2 (for output) referance to 34.4.11
