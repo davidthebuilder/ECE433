@@ -76,22 +76,22 @@ int main(void) {
 
 
     // TEST CASE 3:
-//    while(1){
+    while(1){
 //    freq_gen(5000); // LED is On for 5 second, OFF for 5 second(NOTE: freq_gen is passing an arg that will be setting the period in msec)
-//
-//    }
+
+    }
 
 //    // TEST CASE 4: (should run in debug mode)
-    edge_counter();
+//    edge_counter();
 
 
 //    // TEST CASE 5:  Using PWM for dimming an LED
-//    int i=0;
-//    while(1){
-//        pwm(i);
-//        delay_ms(1000);
-//        i=(i+1)%101;   // so i is 0 to 100
-//    }
+    int i=0;
+    while(1){
+        pwm(i);
+        delay_ms(1000);
+        i=(i+1)%101;   // so i is 0 to 100
+    }
 
 }
 
@@ -244,7 +244,7 @@ void edge_counter(){
     	// configure GPIOD to AF
 
     	// GPIOD port MODER GREEN set to Alternate function mode for the timer
-    		bitclear(GPIOD->MODER,28); // These are refered in 11.6.1
+    		bitclear(GPIOD->MODER,28); // These are referred in 11.6.1
     		bitset(GPIOD->MODER,29);
 
     	//enabling GPIOD
@@ -259,12 +259,13 @@ void edge_counter(){
 
 
 
-    	bitset(LPTIM2->CR, 0); // LPTIM is enabled referance to 37.7.5
+    	bitset(LPTIM2->CR, 0); // LPTIM is enabled reference to 37.7.5
+    	bitset(LPTIM2->CR,2); // Enable continuous mode
 
     	bitset(LPTIM2->CFGR,17); // configure the TRIGEN to rising edges per 37.
     	bitclear(LPTIM2->CFGR,18);
 
-    	bitset(LPTIM2->CFGR, 0); // refer 37.7.4 for configuration reg for low power timer
+    	bitset(LPTIM2->CFGR, 0); // refer 37.7.4 for configuration registers for low power timer
 
     	// Ensure that PD12 has a wire reaching to STLINK-RX (top left of the board has a RX pin in the silkscreen)
 
@@ -272,11 +273,7 @@ void edge_counter(){
     	Uart_char =LPUART1read();
 
     	 //monitor the count value of the timer 2
-
-
     	global_var = LPTIM2->CNT; // Using Low power timer 2 to count reg refer 37.7.8
-
-
    }
 }
 
@@ -305,21 +302,47 @@ void pwm(uint32_t val){
 
     // configure PB7 to be driven by the clock
 
-    // configure TIM3
+    // configure TIM4
+
+	bitset(RCC->APB1ENR1,2); // RCC APB1ENR1 enable timer 4 referance 9.8.42 mapping
+
+	bitset(RCC->APB2ENR,1); // enabling port B referance 9.8.42 mapping
+
+	// Set prescaler
+	TIM4->PSC = 16000-1;	// Prescaler setting, slow down the clk to 1kHz (The counter clock frequency CK_CNT is equal to fCK_PSC , Refer to 34.4.14
+
+	// Setting Auto reload register (using the passed val)
+	TIM4->ARR = val-1 ;	//FIX THIS, ARR is to be set to twice the value minus 1 for the frequency. Reference 34.4.15
+
+
+	// Setting Capture/Compare Mode Reg
+	TIM3->CCMR1 = 0x6000;		//0011: Toggle - OC1REF toggles when TIMx_CNT=TIMx_CCMR2 (/1) refer to 34.4.8
+
+	//  Description for PWM modes:
+	//	0110: PWM mode 1
+	//	0111: PWM mode 2
+	//	PWM mode 1 (0110) is typically used when you want the output to be active (high) as long as the timer's counter (TIMx_CNT) is less than the capture/compare register (TIMx_CCRx) value.
+	//	Conversely, PWM mode 2 (0111) sets the output active (high) when TIMx_CNT surpasses TIMx_CCRx.
+	//	The choice between PWM mode 1 and 2 affects the polarity of your PWM signal.
+
+	//Set the match value to val (or something based on val)?
+	TIM4->CCR1 = val//FIX THIS DO i NEED TO SET IT TO CCR2 OR CCR1?
+
+
+	bitset(TIM4->CCER,4);// Enable compare mode for Channel 2 (for output) referance to 34.4.11
+
+
+	// Counter Current Value
+
+	TIM4->CNT =0; // Counter need to be set to 0 to reset the cycle of operation refer to 34.4.12
+
+	bitset(TIM4->CR1,0); // referance 34.4.1
+
+
+	//DO I NED TO MODIFY PIN 7 FOR PORT B (PB7) AFR MOD? SETTING AFR? I DON'T KNOW
+
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 /////////////////////
