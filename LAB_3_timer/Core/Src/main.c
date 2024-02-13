@@ -76,23 +76,23 @@ int main(void) {
 
 
     // TEST CASE 3:
-    while(1){
+//    while(1){
 //    freq_gen(5000); // LED is On for 5 second, OFF for 5 second(NOTE: freq_gen is passing an arg that will be setting the period in msec)
-
-    }
+//
+//    }
 
 //    // TEST CASE 4: (should run in debug mode)
-//    edge_counter();
+    edge_counter();
 
 
 //    // TEST CASE 5:  Using PWM for dimming an LED
-    int i=0;
-    while(1){
-        pwm(i);
-        delay_ms(1000);
-        i=(i+1)%101;   // so i is 0 to 100
-    }
-
+//    int i=0;
+//    while(1){
+//        pwm(i);
+//        delay_ms(1000);
+//        i=(i+1)%101;   // so i is 0 to 100
+//    }
+//
 }
 
 
@@ -184,6 +184,8 @@ void freq_gen(uint16_t val){
 
     /* Timer and PC7 Configuration is here */
 // GPIOC port MODER GREEN set to Alternate function mode for the timer
+	bitset(RCC->AHB2ENR,2); //enable GPIOC see 9.8.42 mapping NOTE have RCC enable at the beginning of the code
+    bitset(RCC->APB1ENR1,1);// enable PC7 that is is connected to TIM3_CH2 9.8.42 mapping
 	bitclear(GPIOC->MODER,14); // These are refer in 11.6
 	bitset(GPIOC->MODER,15);
 
@@ -196,24 +198,26 @@ void freq_gen(uint16_t val){
 //	bitclear(GPIOC->MODER,15); // These are refer in 11.6
 //	bitset(GPIOC->MODER,14);
 
-    bitset(RCC->APB1ENR1,1);// enable PC7 that is is connected to TIM3_CH2
 	TIM3->PSC = 16000-1;	// Prescaler setting, slow down the clk to 1kHz (The counter clock frequency CK_CNT is equal to fCK_PSC , Refer to 34.4.14
 	TIM3->ARR = val-1 ;	// ARR is to be set to twice the value minus 1 for the frequency. Reference 34.4.15
-	TIM3->CCMR2 = 0x3000;		//0011: Toggle - OC1REF toggles when TIMx_CNT=TIMx_CCMR2 refer to 34.4.8
+	TIM3->CCMR1 = 0x3000;		//0011 0000 0000 0000: Toggle - OC1REF toggles when TIMx_CNT=TIMx_CCMR2 refer to 34.4.8
 	TIM3->CCR2 = val/2;		// CCR2 is capturing/Compare in channel 2 refer 34.4.17
-	TIM3->CCER |=0b100000 ;		// enable ch 2 per 34.4.11
+	TIM3->CCER |=0b10000 ;		// enable ch 2 per 34.4.11
 	TIM3->CNT = 0;			// Counter need to be set to 0 to reset the cycle of operation refer to 34.4.12
 	TIM3->CR1 |= 1;			// This just enables the counter Reference 34.4.1
+	for(;;){
 	while(bitcheck(TIM3->SR, 0)==0){ // This is checking for the state register for any interrupts ref 34.4.5
 								   	 // Bit 0 UIF: Update interrupt flag
-									 // This bit is set by hardware on an update event. It is cleared by software.
-									 //	0: No update occurred
-									 //	1: Update interrupt pending.
+             	    				 // This bit is set by hardware on an update event. It is cleared by software.
+	//setting global_var=0; here will not work correctly
 	}
+	if( global_var==1) global_var=0;// global_var is used to monitor the SWV plotter
+	else global_var=1;
+
 	bitclear(TIM3->SR,0); // This is not the same as SYSTICK in the sense that it will clear the flag because in this case it is interrupt flag
 
 }
-
+}
 // Use LPTIM2 routed to PD12
 void edge_counter(){
     // Use external input PD12 as the LPTIM2 clock source. Should be connected to the PIN RX of on the STLINK.
@@ -235,45 +239,52 @@ void edge_counter(){
 
     // Configure LPTIM2 to use external input as counter clock source
 
-	LPTIM2->CNT =0; // clearing the counter
+
     while (1){
        // In a debug mode monitor: LPTIM2->CNT while you are sending the letter 'U' from terminal
        // you are going to see 0 before you press, then 5 after the 1st 'U',
        // then 10 and so on.
 
-    	// configure GPIOD to AF
-
-    	// GPIOD port MODER GREEN set to Alternate function mode for the timer
-    		bitclear(GPIOD->MODER,28); // These are referred in 11.6.1
-    		bitset(GPIOD->MODER,29);
 
     	//enabling GPIOD
-    		bitset(RCC->APB2ENR,3); // Enabling the timer for GPIOD per  9.8.42 map
+    	bitset(RCC->APB2ENR,3); // Enabling the timer for GPIOD per  9.8.42 map
 
-    		bitset(GPIOD->AFR[1],19); // For alternate function refer to 11.6.13 and excel spreadsheet
-    		bitset(GPIOD->AFR[1],18); // Also AFR is an array type size of 2 for both AFHR ( section 14 [3:0] set to high)
-    		bitset(GPIOD->AFR[1],17);
-    		bitclear(GPIOD->AFR[1],16);
+    	// configure GPIOD to AF
+    	// GPIOD port MODER GREEN set to Alternate function mode for the timer
+		bitclear(GPIOD->MODER,24); // These are referred in 11.6.1
+		bitset(GPIOD->MODER,25);
+
+		//Alternat Function section
+		bitset(GPIOD->AFR[1],19); // For alternate function refer to 11.6.13 and excel spreadsheet
+		bitset(GPIOD->AFR[1],18); // Also AFR is an array type size of 2 for both AFHR ( section 14 [3:0] set to high)
+		bitset(GPIOD->AFR[1],17);
+		bitclear(GPIOD->AFR[1],16);
+
     	//initialize low power timer two LPTIM2 and configuration
     	bitset(RCC->APB1ENR2,5); // enable LPTTIM2EN per 9.8.42 table 80
 
+    	LPTIM2->CFGR  = 1|(1 << 23);// use external clock source per 37.7.4
 
+    	LPTIM2->CNT =0; // clearing the counter
 
     	bitset(LPTIM2->CR, 0); // LPTIM is enabled reference to 37.7.5
     	bitset(LPTIM2->CR,2); // Enable continuous mode
 
-    	bitset(LPTIM2->CFGR,17); // configure the TRIGEN to rising edges per 37.
-    	bitclear(LPTIM2->CFGR,18);
-
-    	bitset(LPTIM2->CFGR, 0); // refer 37.7.4 for configuration registers for low power timer
-
+    	LPTIM2->ARR= 100-1;
     	// Ensure that PD12 has a wire reaching to STLINK-RX (top left of the board has a RX pin in the silkscreen)
 
     	// READ to the UART Function from the terminal
-    	Uart_char =LPUART1read();
+//    	Uart_char =LPUART1read();
 
-    	 //monitor the count value of the timer 2
-    	global_var = LPTIM2->CNT; // Using Low power timer 2 to count reg refer 37.7.8
+//    	 //monitor the count value of the timer 2
+//    	global_var = LPTIM2->CNT; // Using Low power timer 2 to count reg refer 37.7.8
+    	for(;;){
+
+    		LPUART1read();
+    	}
+
+		//global_var= LPTIM2->CNT =0;
+
    }
 }
 
@@ -308,15 +319,19 @@ void pwm(uint32_t val){
 
 	bitset(RCC->APB2ENR,1); // enabling port B referance 9.8.42 mapping
 
+	//GPIOB needs to be mod for AFR
+
+	//GPIOB set the AFR correctly
+
 	// Set prescaler
-	TIM4->PSC = 16000-1;	// Prescaler setting, slow down the clk to 1kHz (The counter clock frequency CK_CNT is equal to fCK_PSC , Refer to 34.4.14
+	TIM4->PSC = 16-1;	// Prescaler setting, slow down the clk to 1kHz (The counter clock frequency CK_CNT is equal to fCK_PSC , Refer to 34.4.14
 
 	// Setting Auto reload register (using the passed val)
 	TIM4->ARR = val-1 ;	//FIX THIS, ARR is to be set to twice the value minus 1 for the frequency. Reference 34.4.15
 
 
 	// Setting Capture/Compare Mode Reg
-	TIM3->CCMR1 = 0x6000;		//0011: Toggle - OC1REF toggles when TIMx_CNT=TIMx_CCMR2 (/1) refer to 34.4.8
+	TIM3->CCMR1 = 0x6000;		//0110: Set to PWM refer to 34.4.8
 
 	//  Description for PWM modes:
 	//	0110: PWM mode 1
@@ -326,7 +341,7 @@ void pwm(uint32_t val){
 	//	The choice between PWM mode 1 and 2 affects the polarity of your PWM signal.
 
 	//Set the match value to val (or something based on val)?
-	TIM4->CCR1 = val;//FIX THIS DO i NEED TO SET IT TO CCR2 OR CCR1?
+	TIM4->CCR1 = val-1;//FIX THIS DO i NEED TO SET IT TO CCR2 OR CCR1?
 
 
 	bitset(TIM4->CCER,4);// Enable compare mode for Channel 2 (for output) referance to 34.4.11
@@ -440,3 +455,4 @@ int LPUART1read(void) {
     while (!(LPUART1->ISR & 0x0020)) {}   // wait until char arrives
     return LPUART1->RDR;
 }
+
