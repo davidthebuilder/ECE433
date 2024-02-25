@@ -39,6 +39,7 @@ extern "C" {
 #include "stm32l5xx_ll_dma.h"
 
 #include "stm32l5xx_ll_exti.h"
+#include "Prox_sensor.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
