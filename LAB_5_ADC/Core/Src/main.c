@@ -4,9 +4,8 @@
 // Some helper macros
 #define bitset(word,   idx)  ((word) |=  (1<<(idx))) //Sets the bit number <idx> -- All other bits are not affected.
 #define bitclear(word, idx)  ((word) &= ~(1<<(idx))) //Clears the bit number <idx> -- All other bits are not affected.
-#define bittoggle(word,  idx)  ((word) ^=  (1<<(idx))) //Flips the bit number <idx> -- All other bits are not affected.
-#define bitcheck(word, idx)  ((word>>idx) &   1    ) //Checks the bit number <idx> -- 0 means clear; !0 means set.
-
+#define bitflip(word,  idx)  ((word) ^=  (1<<(idx))) //Flips the bit number <idx> -- All other bits are not affected.
+#define bitcheck(word, idx)  ((word>>idx) & 1) //Checks the bit number <idx> -- 0 means clear; !0 means set.
 
 // Helping functions
 void setClks();
@@ -14,16 +13,12 @@ void LPUART1init(void);
 void LPUART1write(int c);
 int  LPUART1read(void);
 void myprint(char msg[]);
-void RLEDinit();
-void RLEDtoggle();
-void TIMER_1_init();
-void PC0_Pin_init();
-void BTNinit();
-void BTN_interrupt_int();
-void ADC1_IN1_init_and_setup();
-void ADC1_IN2_channel_change();
-void delayMs(int n);
-volatile int POT_data=0;
+void RLEDinit(void);
+void RLEDtoggle(void);
+void time_init(void);
+void Pin_init(void);
+void ACD_init_setup(void);
+//void BTNinit();
 
 
 #define PERIOD 5 //ms
@@ -33,40 +28,20 @@ int main (void) {
     setClks();     // Clocks are ready to use, 16Mhz for system
     LPUART1init(); // UART is ready to use
     RLEDinit();    // RED LED is ready to use
-    TIMER_1_init(); // timer 1 setup
-    PC0_Pin_init();
-    BTNinit();
-    BTN_interrupt_int();
-    ADC1_IN1_init_and_setup();
-
-
-    // Enable TIM1
-    TIM1->CR1 = 1;
-
+    time_init();
+    Pin_init();
+    ACD_init_setup();
 
     while (1){
     }
 
 }
 
-/********************
- * Interupts Section*
- ********************/
-void EXTI13_IRQHandler(){
+void TIM1_UP_IRQHandler(){
 	RLEDtoggle();
+	//TIM1->SR &= ~1; // Clear flag
 
-	ADC1_IN2_channel_change();// Setup to channel 2
 
-	delayMs(10);
-
-	// Taking measurments from PC1 ADC1_IN2 JDATA.
-	POT_data=ADC1->JDR2;
-
-	ADC1_IN1_init_and_setup(); // reconfigure to Channel_1
-
-    // 10- Clear pending Interrupt
-	EXTI->FPR1 |= 1<<13; // Cleared by writing 1 to it!
-	                     // Use RPR1 when trigger by Rising edge
 }
 
 void ADC1_2_IRQHandler(){
@@ -77,115 +52,21 @@ void ADC1_2_IRQHandler(){
 	// read conversion result  (Reading DR clear EOC flag)
 	adc_val = (ADC1->DR)&0xfff;
 	// VREF=3.3V, step size is 3.3V/(2^12)=3.3/4096
-	float voltage = adc_val*(3.3/4096);
+	float voltage = adc_val*(3.3/4096)*2;///2
 
-/*
-* The formula to calculate the output voltage (Vout) at a given temperature (T°C) is:
-*	Vout= Vnot + (TC * TempC)
-*
-*	Vout in this case is voltage =adc_val*(3.3/4096)
-*	Vnot= 400 mV 9701 and 500mV for 9700
-*	TC is the temperature coefficient (19.5 mV/°C for the MCP9701),
-*	TempC is the ambient temperature in Celsius.
-*	811mV is equal to the 70 Celsius
-*
-*	F = C * (9/5) + 32
-*	(F-32)*(5/9)=C
-*
- */
-	sprintf(txt, "$%.02f;",  voltage); //enable float print (also did it for scanf)
+	float temp_C= (voltage-.4)/(.0195);
+	float temp_f = temp_C*(9/5)+32;
+
+	// Make
+	sprintf(txt, "$%.02f;",  temp_f);
 	myprint(txt);
 	NVIC_EnableIRQ(ADC1_2_IRQn);
 }
 
 
-/**************************************
- *  ADCs INITIALIZATION SETUP SECTION *
- * ************************************/
-
-void ADC1_IN1_init_and_setup(){
-// Enable ADC Clock
-bitset(RCC->AHB2ENR, 13);  // Enable ADC clock
-RCC->CCIPR1 |=0x3<<28;     // Route SYSCLK (HCLK) to ADC
-
-// Turn on ADC Voltage Regulator
-bitclear(ADC1->CR, 29);  // Get out of deep power down mode
-bitset(ADC1->CR, 28);
-
-// External Trigger Enable and Polarity; EXTEN= 0b01 for rising edge
-bitset(ADC1->CFGR,   10);
-bitclear(ADC1->CFGR, 11);
-
-//External trigger (EXT0) is connected to TIM1_CH1; EXTSEL=0000
-bitclear(ADC1->CFGR, 6); // 0b0000
-bitclear(ADC1->CFGR, 7);
-bitclear(ADC1->CFGR, 8);
-bitclear(ADC1->CFGR, 9);
-// Wait for the voltage regulator to stabilize
-delayMs(10);
-
-// Set up ADC1_IN1
-ADC1->SQR1 = (1<<6)|(0); 	       // L=0 (one channel to read), SQ1=IN1 which is connected to PC0 (Called ADC1_IN1)
-
-// Enable Interrupt so that the Timer trigger the ADC to do conversion
-// Once the conversion is done, the EOC flag is raised and the IRQ handler for ADC is called.
-NVIC_SetPriority(ADC1_2_IRQn, 1);
-NVIC_EnableIRQ(ADC1_2_IRQn);
-ADC1->IER  |= 1<<2;                // Enable EOC Interrupt
-ADC1->CR   |= 1;            	   // Enable ADC
-
-bitset(ADC1->CFGR, 12);  // OVRMOD: Disable overrun mode (ADC keeps going even if user does not read)
-
-// Wait until ADC is Ready (ADRDY)
-while(bitcheck(ADC1->ISR, 0)==0);
-
-bitset(ADC1->CR, 2); // Start Conversion (won't actally do the conversion! It will wait for external trigger instead)
-}
-
-void ADC1_IN2_channel_change(){
-
-// Set up ADC1_IN2
-ADC1->JSQR = (1<<14)|(1); 	// L=1 (Two channel to read), SQ2=IN2 which is connected to PC1
-bitset(ADC1->CR, 3);  // enable injection mode
-}
-
-
-/**********************
- *  PIN SETUP SECTION *
- * ********************/
-void PC0_Pin_init(){
-// PC0 is ADC1_IN1  (Check datasheet or slides)
-RCC->AHB2ENR  |= 0b100;         // Enable GPIOC
-bitset(GPIOC->MODER, 0);        // Setup PC0 to 0b11 (Analog input: 0b11)
-bitset(GPIOC->MODER, 1);
-}
-
-void PC1_Pin_init(){
-// PC0 is ADC1_IN1  (Check datasheet or slides)
-RCC->AHB2ENR  |= 0b100;         // Enable GPIOC
-bitset(GPIOC->MODER, 2);        // Setup PC1 (Analog input: 0b1100 in the modder)
-bitset(GPIOC->MODER, 3);
-}
-
-void TIMER_1_init(){
-// TIMER SETUP
-bitset(RCC->APB2ENR, 11);    // enable TIM1 clock
-TIM1->PSC = 16000 - 1;       // Divided 16MHz source clk by 16000, for 1ms tick
-
-
-TIM1->ARR = PERIOD - 1;      // Count 1ms PERIOD times (This is where the Freq of the POT measurement)
-
-
-TIM1->CCMR1 = 0x30;          // Set output to toggle on match (Output Compare Mode)
-TIM1->CCR1 = 1;				 // Output will toggle when CNT==CCR1
-bitset(TIM1->BDTR, 15);      // Main output enable
-TIM1->CCER |= 1;             // Enable CH1 compare mode
-TIM1->CNT = 0;               // Clear counter
-}
-
-/////////////////////
-// Helping Functions
-/////////////////////
+//////////////////////
+// Helping Functions//
+//////////////////////
 void RLEDinit(){
 // Enable clock going to GPIOA
 RCC->AHB2ENR|=1;
@@ -196,6 +77,15 @@ GPIOA->MODER &= ~(1<<19);
 }
 void RLEDtoggle(){
 GPIOA->ODR ^= 1<<9;
+}
+
+void Pin_init(){
+// PC0 is ADC1_IN1  (Check datasheet or slides)
+RCC->AHB2ENR  |= 0b100;         // Enable GPIOC
+bitset(GPIOC->MODER, 0);        // Setup PC0 to 0b11 (Analog input)
+bitset(GPIOC->MODER, 1);
+bitset(GPIOC->MODER,2);
+bitset(GPIOC->MODER,3);
 }
 
 void setClks(){
@@ -210,9 +100,51 @@ RCC->CR       |=0x161;   // MSI clock enable; MSI=4 MHz; HSI16 clock enable
 
 
 
-/*********************************************
- * UART INIT and SETUP (Print is in here too)*
- *********************************************/
+void button_interupt() {
+	//	1- Enable GPIO as input
+	BTNinit();
+
+	//	2- Enable Clock to SYSCFG
+	// To use EXTI you need to enable SYSCFG
+	RCC->APB2ENR   |= 1;  // Enable Clock to SYSCFG & EXTI
+
+	//	3- Select Input Using EXTI-->CRx
+	EXTI->EXTICR[3] = (0x2)<<8;  // Select PC13
+
+    //  REG        |  31-24   | 23-16  |  15-8   |    7-0    |
+	//-------------+----------+--------+---------+-----------+
+	// EXTICR[0]   |  GPIOx3  | GPIOx2 |  GPIOx1 |  GPIOx0   |
+	// EXTICR[1]   |  GPIOx7  | GPIOx6 |  GPIOx5 |  GPIOx4   |
+	// EXTICR[2]   |  GPIOx11 | GPIOx10|  GPIOx9 |  GPIOx8   |
+	// EXTICR[3]   |  GPIOx15 | GPIOx14|  GPIOx13|  GPIOx12  |
+	//-------------+----------+--------+---------+-----------+
+    //  MUXSEL:   0 1 2 3 4 5 6 7
+	//  PORT:     A B C D E F G H
+
+
+	//	4- Select Trigger type (Failing or Raising Edge)
+	EXTI->FTSR1    |= 1<<13;     // Trigger on falling edge of PC13
+	                             // Use RTSR1 register for rising edge
+
+	//	5- Disable Interrupt Mask
+	EXTI->IMR1     |= 1<<13;     // Interrupt mask disable for PC13
+
+	//	6- Setup Interrupt Priority
+	NVIC_SetPriority(EXTI13_IRQn, 0); // 0 is higher than 1 (3 bit priority)
+
+	//	7- Enable IRQ in NVIC
+	NVIC_EnableIRQ(EXTI13_IRQn);
+
+	//	8- Enable Global Interrupt Flag
+	__enable_irq();   // No need since it is enabled by default}
+
+void BTNinit(){
+	RCC->AHB2ENR |= (1<<2); // Enable GPIOC
+	// Set up the mode for button at C13
+	bitclear(GPIOC->MODER, 26); // Clear bit 26 and 27
+	bitclear(GPIOC->MODER, 27);
+}
+
 
 void LPUART1init(){
 PWR->CR2      |=0x200;   // Enable VDDIO2 Independent I/Os supply
@@ -266,6 +198,70 @@ LPUART1->CR1 |= 1; // Enable LPUART1
 
 }
 
+
+void ACD_ch1_init_setup(){
+// Enable ADC Clock
+bitset(RCC->AHB2ENR, 13);  // Enable ADC clock
+RCC->CCIPR1 |=0x3<<28;     // Route SYSCLK (HCLK) to ADC
+
+// Turn on ADC Voltage Regulator
+bitclear(ADC1->CR, 29);  // Get out of deep power down mode
+bitset(ADC1->CR, 28);
+
+// External Trigger Enable and Polarity; EXTEN= 0b01 for rising edge
+bitset(ADC1->CFGR,   10);
+bitclear(ADC1->CFGR, 11);
+
+//External trigger (EXT0) is connected to TIM1_CH1; EXTSEL=0000
+bitclear(ADC1->CFGR, 6); // 0b0000
+bitclear(ADC1->CFGR, 7);
+bitclear(ADC1->CFGR, 8);
+bitclear(ADC1->CFGR, 9);
+
+
+// Wait for the voltage regulator to stabilize
+delayMs(10);
+
+// Set up ADC1
+ADC1->SQR1 = (1<<6)|(0); 	       // L=0 (one channel to read), SQ1=IN1 which is connected to PC0 (Called ADC1_IN1)
+ADC1->SQR1 = (1<<12) |(1);         //L=1 (2nd channel to read), SQ1=IN2 which is connected to Pc1 (Called ADC1_ IN2)
+// Enable Interrupt so that the Timer trigger the ADC to do  conversion
+// Once the conversion is done, the EOC flag is raised and the IRQ handler for ADC is called.
+NVIC_SetPriority(ADC1_2_IRQn, 0);
+NVIC_EnableIRQ(ADC1_2_IRQn);
+ADC1->IER  |= 1<<2;                // Enable EOC Interrupt
+ADC1->CR   |= 1;            	   // Enable ADC
+
+bitset(ADC1->CFGR, 12);  // OVRMOD: Disable overrun mode (ADC keeps going even if user does not read)
+
+// Wait until ADC is Ready (ADRDY)
+while(bitcheck(ADC1->ISR, 0)==0);
+
+bitset(ADC1->CR, 2); // Start Conversion (won't actally do the conversion! It will wait for external trigger instead)
+// Enable TIM1
+TIM1->CR1 = 1;
+}
+void ACD_ch2_init_setup(){
+
+	ADC1->JSQR = (2<<14) | (1);
+	ADC1->CR
+}
+
+
+
+void time_init(){
+// TIMER SETUP
+	bitset(RCC->APB2ENR, 11);    // enable TIM1 clock
+	TIM1->PSC = 16000 - 1;       // Divided 16MHz source clk by 16000, for 1ms tick
+	TIM1->ARR = PERIOD - 1;      // Count 1ms PERIOD times
+	TIM1->CCMR1 = 0x30;          // Set output to toggle on match (Output Compare Mode)
+	TIM1->CCR1 = 1;				 // Output will toggle when CNT==CCR1
+	bitset(TIM1->BDTR, 15);      // Main output enable
+	TIM1->CCER |= 1;             // Enable CH1 compare mode
+	TIM1->CNT = 0;               // Clear counter
+}
+
+
 void myprint (char msg[]){
     uint8_t idx=0;
     while(msg[idx]!='\0')
@@ -273,6 +269,7 @@ void myprint (char msg[]){
     	LPUART1write(msg[idx++]);
     }
 }
+
 
 
 /* Write a character to LPUART1 */
@@ -287,51 +284,6 @@ int LPUART1read(void) {
     return LPUART1->RDR;
 }
 
-
-
-/*******************************************
- * Button section (init and interupt setup)*
- *******************************************/
-void BTNinit(){
-	RCC->AHB2ENR |= (1<<2); // Enable GPIOC
-	// Set up the mode for button at C13
-	bitclear(GPIOC->MODER, 26); // Clear bit 26 and 27
-	bitclear(GPIOC->MODER, 27);
-}
-
-void BTN_interrupt_int(){
-	//	1- Enable GPIO as input
-	BTNinit();
-
-	//	2- Enable Clock to SYSCFG
-	// To use EXTI you need to enable SYSCFG
-	RCC->APB2ENR   |= 1;  // Enable Clock to SYSCFG & EXTI
-
-	//	3- Select Input Using EXTI-->CRx
-	EXTI->EXTICR[3] = (0x2)<<8;  // Select PC13
-
-
-	//	4- Select Trigger type (Failing or Raising Edge)
-	EXTI->FTSR1    |= 1<<13;     // Trigger on falling edge of PC13
-	                             // Use RTSR1 register for rising edge
-
-	//	5- Disable Interrupt Mask
-	EXTI->IMR1     |= 1<<13;     // Interrupt mask disable for PC13
-
-	//	6- Setup Interrupt Priority
-	NVIC_SetPriority(EXTI13_IRQn, 0); // 0 is higher than 1 (3 bit priority)
-
-	//	7- Enable IRQ in NVIC
-	NVIC_EnableIRQ(EXTI13_IRQn);
-
-	//	8- Enable Global Interrupt Flag
-	__enable_irq();   // No need since it is enabled by default
-	}
-
-
-/***********************
-*	Delay Timer        *
-************************/
 void delayMs(int n) {
     int i;
 
